@@ -60,10 +60,10 @@ if __name__ == "__main__":
     # Notice the location of the cut as the '//' marker gate.
     print(cut_circuit)
 
-    print("----- Subcircuits -----")
-    for subcircuit in cut_circuit:
-        print(subcircuit)
-        print()
+    # print("----- Subcircuits -----")
+    # for subcircuit in cut_circuit:
+    #     print(subcircuit)
+    #     print()
 
     # Run all the subcircuits - by default we use the `statevector_simulator`
     # backend from qiskit.
@@ -83,4 +83,5 @@ if __name__ == "__main__":
     # Verification involves comparing the generated probabilities
     # with the expected probabilities from a simulation of the uncut circuit.
     # By default we use the `statevector_simulator` backend from qiskit.
-    cut_circuit.verify()
+    print(cut_circuit.verify())
+    print ("done!")

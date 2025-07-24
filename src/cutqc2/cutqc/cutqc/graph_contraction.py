@@ -20,10 +20,11 @@ class GraphContractor(object):
         for subcircuit_idx in compute_graph.nodes:
             self.num_qubits += compute_graph.nodes[subcircuit_idx]["effective"]
 
-        self.smart_order = sorted(
-            self.subcircuit_entry_lengths.keys(),
-            key=lambda subcircuit_idx: self.subcircuit_entry_lengths[subcircuit_idx],
-        )
+        # self.smart_order = sorted(
+        #     self.subcircuit_entry_lengths.keys(),
+        #     key=lambda subcircuit_idx: self.subcircuit_entry_lengths[subcircuit_idx],
+        # )
+        self.smart_order = self.subcircuit_entry_lengths.keys()
         self.reconstructed_prob = self.compute()
 
     def compute(self):
@@ -33,7 +34,7 @@ class GraphContractor(object):
         for edge_bases in itertools.product(["I", "X", "Y", "Z"], repeat=len(edges)):
             self.compute_graph.assign_bases_to_edges(edge_bases=edge_bases, edges=edges)
             summation_term = []
-            for subcircuit_idx in self.smart_order:
+            for subcircuit_idx in self.subcircuit_entry_probs:
                 subcircuit_entry_init_meas = self.compute_graph.get_init_meas(
                     subcircuit_idx=subcircuit_idx
                 )

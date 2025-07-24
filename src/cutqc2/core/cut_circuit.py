@@ -14,12 +14,28 @@ from qiskit.converters import circuit_to_dag
 from qiskit.dagcircuit import DAGOpNode, DAGCircuit
 
 from cutqc2.cutqc.cutqc.evaluator import run_subcircuit_instances, attribute_shots
-from cutqc2.cutqc.cutqc.dynamic_definition import read_dd_bins, DynamicDefinition
+from cutqc2.cutqc.cutqc.graph_contraction import GraphContractor
 from cutqc2.cutqc.cutqc.compute_graph import ComputeGraph
 from cutqc2.cutqc.helper_functions.non_ibmq_functions import evaluate_circ
 from cutqc2.cutqc.helper_functions.conversions import quasi_to_real
 from cutqc2.cutqc.helper_functions.metrics import MSE
 from cutqc2.core.dag import DagNode, DAGEdge
+
+import numpy as np
+def permute_bit_vector (bin_input: str, permutation_map: list):
+      """Bit values in given bit vector are permuted according to the given permutation_map"""
+      # assert (permutation_map is a permutation (no duplicates))
+      
+      import numpy as np    
+      res_bin = list(np.binary_repr(0, width=len(bin_input)))
+            
+      ## Repeatedly interchange bits according to permutation map
+      for idx, permuted_idx in enumerate(permutation_map):    
+          # The minus one bellow accounts for ordering by np_arrays
+          res_bin[len(bin_input) - idx - 1] = bin_input[permuted_idx]
+      
+      res_bin = ''.join(res_bin)  # Convert back to string if needed
+      return res_bin
 
 
 @dataclass
@@ -284,13 +300,40 @@ class CutCircuit:
                 "depth": subcircuit.depth(),
                 "size": subcircuit.size(),
             }
+        
         for pair in O_rho_pairs:
             O_qubit, rho_qubit = pair
             counter[O_qubit["subcircuit_idx"]]["effective"] -= 1
             counter[O_qubit["subcircuit_idx"]]["O"] += 1
             counter[rho_qubit["subcircuit_idx"]]["rho"] += 1
 
+        for idx in counter:
+          print (counter[idx]["effective"])
+        
         return counter
+
+    def log_cutter_result(self):
+        num_cuts = self.num_cuts
+        subcircuits = self.subcircuits
+        counter = self.get_counter ()
+        print("Cutter result:")
+        print(f"{len(subcircuits)} subcircuits, {num_cuts} cuts")
+
+        for subcircuit_idx in range(len(subcircuits)):
+            subcircuit_info = f"subcircuit {subcircuit_idx}\n"
+            subcircuit_info += (
+                "\u03C1 qubits = %d, O qubits = %d, width = %d, effective = %d, depth = %d, size = %d\n"
+                % (
+                    counter[subcircuit_idx]["rho"],
+                    counter[subcircuit_idx]["O"],
+                    counter[subcircuit_idx]["d"],
+                    counter[subcircuit_idx]["effective"],
+                    counter[subcircuit_idx]["depth"],
+                    counter[subcircuit_idx]["size"],
+                )
+            )
+            subcircuit_info += f"{subcircuits[subcircuit_idx]}"
+            print(subcircuit_info)
 
     def find_cuts(
         self,
@@ -646,34 +689,69 @@ class CutCircuit:
             self.subcircuit_entry_probs[subcircuit] = attribute_shots(
                 subcircuit_measured_probs=subcircuit_measured_probs,
                 subcircuit_entries=self.subcircuit_entries[subcircuit],
-            )
-
+            )    
     def compute_probabilities(self, mem_limit=None, recursion_depth=1):
-        dd = DynamicDefinition(
-            compute_graph=self.compute_graph,
-            num_cuts=self.num_cuts,
-            subcircuit_entry_probs=self.subcircuit_entry_probs,
-            mem_limit=mem_limit,
-            recursion_depth=recursion_depth,
-        )
-
-        self.approximation_bins = dd.dd_bins
+        
+    
+      graph_contractor = GraphContractor(
+                compute_graph=self.compute_graph,
+                subcircuit_entry_probs = self.subcircuit_entry_probs,
+                num_cuts=self.num_cuts,
+                            )            
+      self.reconstructed_prob = graph_contractor.compute()
+      print (self.reconstructed_prob.shape)      
+      
+        # self.approximation_bins = dd.dd_bins
 
     def postprocess(self) -> np.array:
         if not hasattr(self, "approximation_bins"):
             self.compute_probabilities()
-
-        reconstructed_prob = read_dd_bins(
-            subcircuit_out_qubits=self.reconstruction_qubit_order,
-            dd_bins=self.approximation_bins,
-        )
-        reconstructed_prob = quasi_to_real(
-            quasiprobability=reconstructed_prob, mode="nearest"
-        )
-        return reconstructed_prob
+    
+        print (self.reconstruction_qubit_order)        
+        # reconstructed_prob = read_dd_bins(
+        #     subcircuit_out_qubits=self.reconstruction_qubit_order,
+        #     dd_bins=self.approximation_bins,
+        # )
+        
+        
+        return None
 
     def get_ground_truth(self, backend: str) -> np.ndarray:
         return evaluate_circ(circuit=self.raw_circuit, backend=backend)
+
+    
+    def reorder_real_probability (self, real_probability, num_qubits, subcircuit_out_qubits):
+        """Permutes real_probability vector, according to subcircuit_out_qubits, such that the order matches ground"""
+                
+        from itertools import chain
+        # Input qubits are indices of the list and Subcircuit out qubit incides are the entries
+        permutation_map = list(chain.from_iterable(subcircuit_out_qubits.values())) # Flattens dictionary values into a single list
+        res_probability_vector = np.zeros (len(real_probability))    
+        
+        ## Generate ground indices to real indices mapping list. 
+        ground_to_real_map = []
+        for real_idx in range(2**num_qubits):
+          # Get mapping from the real idx to the ground idx
+          real_bit_str = np.binary_repr(real_idx, width=num_qubits)      
+          
+          ground_idx = int(permute_bit_vector(real_bit_str, permutation_map), 2)      
+          print (permute_bit_vector(real_bit_str, permutation_map))
+          # Insert at index 'real_idx' the computed ground_idx
+          ground_to_real_map.append ((real_idx, ground_idx))
+        
+        
+        # More detailed check
+        unique_values = set(ground_to_real_map)
+        if len(ground_to_real_map) != len(unique_values):
+            from collections import Counter
+            counts = Counter(ground_to_real_map)
+            duplicates = {k: v for k, v in counts.items() if v > 1}
+            raise AssertionError(f"Duplicate values found: {duplicates}")
+        ## Use mapping to interchange properly 
+        for real_idx, ground_idx, in ground_to_real_map:           
+          res_probability_vector[ground_idx] = real_probability[real_idx]
+
+        return res_probability_vector
 
     def verify(
         self,
@@ -681,18 +759,28 @@ class CutCircuit:
         backend: str = "statevector_simulator",
         atol: float = 1e-10,
     ):
-        reconstructed_probabilities = reconstructed_probabilities or self.postprocess()
+        reconstructed_probabilities = self.postprocess()
         ground_truth = self.get_ground_truth(backend)
-
+        reconstructed_probabilities = quasi_to_real(
+            quasiprobability=self.reconstructed_prob, mode="nearest"
+        )
+        print (self.reconstruction_qubit_order)
+        reconstructed_probabilities = self.reorder_real_probability (reconstructed_probabilities, self.circuit.num_qubits, self.reconstruction_qubit_order)
+        
         approximation_error = (
             MSE(target=ground_truth, obs=reconstructed_probabilities)
             * 2**self.circuit.num_qubits
             / np.linalg.norm(ground_truth) ** 2
         )
-
+        
+        
+        print (f"ground_truth: {ground_truth}")
+        print (f"reconstructed_probilies: {reconstructed_probabilities}")
+        print (approximation_error)
         assert approximation_error < atol, (
             "Difference in cut circuit and uncut circuit is outside of floating point error tolerance"
         )
+        return approximation_error
 
     def populate_compute_graph(self):
         """
@@ -702,6 +790,8 @@ class CutCircuit:
 
         self.compute_graph = ComputeGraph()
         counter = self.get_counter()
+        self.log_cutter_result()
+        # exit ()
         for subcircuit_idx, subcircuit_attributes in counter.items():
             subcircuit_attributes = deepcopy(subcircuit_attributes)
             subcircuit_attributes["subcircuit"] = subcircuits[subcircuit_idx]

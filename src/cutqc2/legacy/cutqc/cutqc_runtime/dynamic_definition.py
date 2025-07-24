@@ -3,6 +3,12 @@ from time import perf_counter
 import numpy as np
 
 from cutqc_runtime.graph_contraction import GraphContractor
+           graph_contractor = GraphContractor(
+                compute_graph=self.compute_graph,
+                dd_schedule=dd_schedule,
+                num_cuts=self.num_cuts,
+            )
+            recons
 from cutqc.helper_fun import add_times
 
 
@@ -53,12 +59,7 @@ class DynamicDefinition(object):
             self.times["get_dd_schedule"] += perf_counter() - get_dd_schedule_begin
 
             """ Build from the merged subcircuit entries """
-            graph_contractor = GraphContractor(
-                compute_graph=self.compute_graph,
-                dd_schedule=dd_schedule,
-                num_cuts=self.num_cuts,
-            )
-            reconstructed_prob = graph_contractor.reconstructed_prob
+ tructed_prob = graph_contractor.reconstructed_prob
             smart_order = graph_contractor.smart_order
             recursion_overhead = graph_contractor.overhead
             self.overhead["additions"] += recursion_overhead["additions"]

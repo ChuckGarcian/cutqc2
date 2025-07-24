@@ -228,6 +228,7 @@ def read_dd_bins(subcircuit_out_qubits, dd_bins):
                 binary_bin_id = bin(bin_id)[2:].zfill(num_active)
                 binary_full_state = ["" for _ in range(num_qubits)]
                 for subcircuit_idx in dd_bins[recursion_layer]["smart_order"]:
+
                     subcircuit_state = dd_bins[recursion_layer]["subcircuit_state"][
                         subcircuit_idx
                     ]
